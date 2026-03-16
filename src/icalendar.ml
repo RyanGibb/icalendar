@@ -562,18 +562,33 @@ module Writer = struct
       write_kv "RELATED" r
 
   let write_line cr buf name params ?(dont_write_value=false) value_writer =
-    let write = Buffer.add_string buf in
-    let write_char = Buffer.add_char buf in
-    write name ;
+    let line_buf = Buffer.create 128 in
+    Buffer.add_string line_buf name ;
     Params.iter (fun param ->
         let Params.B (paramk, paramv) = param in
-        write_char ';' ;
-        write_param buf paramk paramv)
+        Buffer.add_char line_buf ';' ;
+        write_param line_buf paramk paramv)
       params ;
-    write_char ':' ;
-    if not dont_write_value then value_writer buf ;
-    if cr then write_char '\r' ;
-    write_char '\n'
+    Buffer.add_char line_buf ':' ;
+    if not dont_write_value then value_writer line_buf ;
+    let line = Buffer.contents line_buf in
+    let len = String.length line in
+    if len <= 75 then
+      Buffer.add_string buf line
+    else begin
+      Buffer.add_string buf (String.sub line 0 75) ;
+      let pos = ref 75 in
+      while !pos < len do
+        if cr then Buffer.add_char buf '\r' ;
+        Buffer.add_char buf '\n' ;
+        Buffer.add_char buf ' ' ;
+        let chunk = min 74 (len - !pos) in
+        Buffer.add_string buf (String.sub line !pos chunk) ;
+        pos := !pos + chunk
+      done
+    end ;
+    if cr then Buffer.add_char buf '\r' ;
+    Buffer.add_char buf '\n'
 
   let escape_chars str =
     let replacements = [

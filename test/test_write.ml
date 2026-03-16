@@ -117,7 +117,47 @@ END:VCALENDAR
     (sort_lines input)
 
 
+let test_line_folding () =
+  let long_summary = String.make 100 'x' in
+  let event = {
+    uid = (empty, "fold-test");
+    dtstamp = (empty, to_ptime (2020, 01, 01) (00, 00, 00));
+    dtstart = (singleton Valuetype `Date, `Date (2020, 01, 01));
+    dtend_or_duration = None;
+    rrule = None;
+    props = [`Summary (empty, long_summary)];
+    alarms = []
+  } in
+  let output =
+    to_ics ~cr:false ( [ `Version (empty, "2.0") ;
+                          `Prodid (empty, "-//Test//Test//EN") ],
+                        [ `Event event ])
+  in
+  (* No output line should exceed 75 octets *)
+  let lines = String.split_on_char '\n' output in
+  List.iter (fun line ->
+    if String.length line > 75 then
+      Alcotest.failf "Line exceeds 75 octets (%d): %s" (String.length line) line
+  ) lines ;
+  (* Unfold and verify original SUMMARY is preserved *)
+  let buf = Buffer.create (String.length output) in
+  let i = ref 0 in
+  let len = String.length output in
+  while !i < len do
+    if !i + 1 < len && output.[!i] = '\n' && output.[!i + 1] = ' ' then
+      i := !i + 2
+    else (
+      Buffer.add_char buf output.[!i];
+      i := !i + 1)
+  done;
+  let unfolded = Buffer.contents buf in
+  let expected_line = "SUMMARY:" ^ long_summary in
+  let found = List.exists (fun line -> line = expected_line)
+    (String.split_on_char '\n' unfolded) in
+  Alcotest.(check bool) "unfolded output contains original SUMMARY" true found
+
 let tests = [
   "Write entire calendar correctly with exceptions", `Quick, test_serialize_calendar ;
   "Write entire calendar correctly with single exception", `Quick, test_single_exception ;
+  "Long lines are folded at 75 octets", `Quick, test_line_folding ;
 ]
