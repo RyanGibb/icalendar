@@ -979,6 +979,20 @@ let rdate_without_rrule () =
 |}
               str)
 
+let weekday_pre_1970 () =
+  (* weekday must work for dates before 1970. Previously, epoch_to_d1
+     only had a base case for 1969 and recursed via pred, diverging
+     for years < 1970. *)
+  (* 1969-07-20 was a Sunday (Apollo 11 moon landing) *)
+  Alcotest.(check bool) "1969-07-20 is Sunday"
+    true (Recurrence.wd_is_weekday (Recurrence.weekday (1969, 7, 20)) `Sunday) ;
+  (* 1900-01-01 was a Monday *)
+  Alcotest.(check bool) "1900-01-01 is Monday"
+    true (Recurrence.wd_is_weekday (Recurrence.weekday (1900, 1, 1)) `Monday) ;
+  (* 1582-10-15 was a Friday (start of Gregorian calendar) *)
+  Alcotest.(check bool) "1582-10-15 is Friday"
+    true (Recurrence.wd_is_weekday (Recurrence.weekday (1582, 10, 15)) `Friday)
+
 let bysetpos_out_of_bounds () =
   (* BYSETPOS=5 with a set that has fewer than 5 elements should not crash.
      RFC 5545: invalid recurrence instances are ignored.
@@ -1051,4 +1065,5 @@ let tests = [
   "RDATE with RRULE", `Quick, rdate_with_rrule ;
   "RDATE without RRULE", `Quick, rdate_without_rrule ;
   "BYSETPOS out-of-bounds", `Quick, bysetpos_out_of_bounds ;
+  "weekday pre-1970", `Quick, weekday_pre_1970 ;
 ]
