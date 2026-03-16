@@ -844,6 +844,23 @@ let ex_recurrence_id () =
 |}
               str)
 
+let byweekno_wkst () =
+  (* 2017-01-01 is Sunday.
+     With Monday WKST (ISO): Jan 1 is in the last week of 2016, so
+     week 1 of 2017 starts Jan 2 (Monday). Jan 1 is NOT in week 1.
+     With Sunday WKST: Jan 1 IS the first day of week 1 of 2017. *)
+  Alcotest.(check bool) "Jan 1 2017 is NOT in week 1 with Monday WKST"
+    false (Recurrence.weekno_matches `Monday (2017, 1, 1) 1) ;
+  Alcotest.(check bool) "Jan 1 2017 IS in week 1 with Sunday WKST"
+    true (Recurrence.weekno_matches `Sunday (2017, 1, 1) 1) ;
+  (* Jan 2 2017 is Monday.
+     With Monday WKST: Jan 2 is week 1 day 1.
+     With Sunday WKST: Jan 2 is week 1 day 2. Both agree it's week 1. *)
+  Alcotest.(check bool) "Jan 2 2017 is in week 1 with Monday WKST"
+    true (Recurrence.weekno_matches `Monday (2017, 1, 2) 1) ;
+  Alcotest.(check bool) "Jan 2 2017 is in week 1 with Sunday WKST"
+    true (Recurrence.weekno_matches `Sunday (2017, 1, 2) 1)
+
 let tests = [
   "example 1", `Quick, ex_1 ;
   "example 2", `Quick, ex_2 ;
@@ -885,4 +902,5 @@ let tests = [
   "example 38: exdate", `Quick, exdate ;
   "example 39: recurrence-id", `Quick, ex_recurrence_id ;
   "example 40: multiple exdates", `Quick, multiple_exdates ;
+  "BYWEEKNO respects WKST", `Quick, byweekno_wkst ;
 ]
