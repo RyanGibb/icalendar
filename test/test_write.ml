@@ -193,9 +193,46 @@ let test_line_folding () =
     (String.split_on_char '\n' unfolded) in
   Alcotest.(check bool) "unfolded output contains original SUMMARY" true found
 
+let test_url_roundtrip () =
+  (* URL with percent-encoded characters should round-trip correctly.
+     The writer was using Uri.pct_decode which decoded %20 to spaces,
+     breaking round-trip fidelity. *)
+  let url = "https://example.com/path%20with%20spaces?q=hello%26world" in
+  let event = {
+    uid = (empty, "url-test");
+    dtstamp = (empty, to_ptime (2020, 01, 01) (00, 00, 00));
+    dtstart = (singleton Valuetype `Date, `Date (2020, 01, 01));
+    dtend_or_duration = None;
+    rrule = None;
+    props = [`Url (empty, Uri.of_string url)];
+    alarms = []
+  } in
+  let output =
+    to_ics ~cr:false ( [ `Version (empty, "2.0") ;
+                          `Prodid (empty, "-//Test//Test//EN") ],
+                        [ `Event event ])
+  in
+  (* Unfold then check URL line *)
+  let buf = Buffer.create (String.length output) in
+  let i = ref 0 in
+  let len = String.length output in
+  while !i < len do
+    if !i + 1 < len && output.[!i] = '\n' && output.[!i + 1] = ' ' then
+      i := !i + 2
+    else (
+      Buffer.add_char buf output.[!i];
+      i := !i + 1)
+  done;
+  let unfolded = Buffer.contents buf in
+  let expected_line = "URL:" ^ url in
+  let found = List.exists (fun line -> line = expected_line)
+    (String.split_on_char '\n' unfolded) in
+  Alcotest.(check bool) "URL with percent-encoding round-trips correctly" true found
+
 let tests = [
   "Write entire calendar correctly with exceptions", `Quick, test_serialize_calendar ;
   "Write entire calendar correctly with single exception", `Quick, test_single_exception ;
   "FREEBUSY periods have comma separators", `Quick, test_freebusy_comma_separators ;
   "Long lines are folded at 75 octets", `Quick, test_line_folding ;
+  "URL percent-encoding preserved", `Quick, test_url_roundtrip ;
 ]
