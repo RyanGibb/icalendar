@@ -844,6 +844,23 @@ let ex_recurrence_id () =
 |}
               str)
 
+let yearly_weekday_matches_test () =
+  (* Test yearly_weekday_matches directly to avoid infinite loops from the
+     buggy recurrence generator when no day matches.
+
+     2002-01-01 is Tuesday, so first Monday is Jan 7 (day 7 of year).
+     Bug: succ(7/7) = 2 (wrong), correct: succ((7-1)/7) = 1.
+     Also tests negative index: Dec 30 2002 is the last Monday. *)
+  Alcotest.(check bool) "Jan 7 2002 is 1st Monday of year"
+    true (Recurrence.yearly_weekday_matches (2002, 1, 7) (1, `Monday)) ;
+  Alcotest.(check bool) "May 20 2002 is 20th Monday of year"
+    true (Recurrence.yearly_weekday_matches (2002, 5, 20) (20, `Monday)) ;
+  Alcotest.(check bool) "May 13 2002 is NOT 20th Monday of year"
+    false (Recurrence.yearly_weekday_matches (2002, 5, 13) (20, `Monday)) ;
+  Alcotest.(check bool) "Dec 30 2002 is last Monday of year"
+    true (Recurrence.yearly_weekday_matches (2002, 12, 30) (-1, `Monday)) ;
+  Alcotest.(check bool) "Dec 23 2002 is NOT last Monday of year"
+    false (Recurrence.yearly_weekday_matches (2002, 12, 23) (-1, `Monday))
 let tests = [
   "example 1", `Quick, ex_1 ;
   "example 2", `Quick, ex_2 ;
@@ -885,4 +902,5 @@ let tests = [
   "example 38: exdate", `Quick, exdate ;
   "example 39: recurrence-id", `Quick, ex_recurrence_id ;
   "example 40: multiple exdates", `Quick, multiple_exdates ;
+  "yearly_weekday_matches", `Quick, yearly_weekday_matches_test ;
 ]
