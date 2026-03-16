@@ -844,6 +844,92 @@ let ex_recurrence_id () =
 |}
               str)
 
+let calendar_rdate = {|BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:rdate-test
+DTSTAMP:20250221T173943Z
+SUMMARY:daily event with rdate
+DTSTART:20250301T090000Z
+DTEND:20250301T100000Z
+RRULE:FREQ=DAILY;COUNT=3
+RDATE:20250305T090000Z
+END:VEVENT
+END:VCALENDAR|}
+
+let rdate_with_rrule () =
+  let calendar = Icalendar.parse calendar_rdate |> Result.get_ok in
+  let event = List.find_map (function `Event e -> Some e | _ -> None) (snd calendar) |> Option.get in
+  let get_events = Icalendar.recur_events event in
+  let buf = Buffer.create 16 in
+  let rec collect () =
+    match get_events () with
+    | None -> ()
+    | Some e ->
+      Buffer.add_string buf
+        ( e.dtstart
+        |> snd
+        |> function
+           | `Datetime ts -> Icalendar.show_timestamp ts
+           | `Date d -> d |> Ptime.of_date |> Option.get |> Ptime.to_rfc3339
+        );
+        Buffer.add_char buf '\n';
+        collect ()
+  in
+  collect ();
+  let str = Buffer.contents buf in
+  (* RRULE gives Mar 1,2,3; RDATE adds Mar 5 *)
+  Alcotest.(check (string) "RDATE dates included in recurrence set"
+{|`Utc (2025-03-01 09:00:00 +00:00)
+`Utc (2025-03-02 09:00:00 +00:00)
+`Utc (2025-03-03 09:00:00 +00:00)
+`Utc (2025-03-05 09:00:00 +00:00)
+|}
+              str)
+
+let calendar_rdate_only = {|BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:rdate-only-test
+DTSTAMP:20250221T173943Z
+SUMMARY:event with rdate only
+DTSTART:20250301T090000Z
+DTEND:20250301T100000Z
+RDATE:20250305T090000Z,20250310T090000Z
+END:VEVENT
+END:VCALENDAR|}
+
+let rdate_without_rrule () =
+  let calendar = Icalendar.parse calendar_rdate_only |> Result.get_ok in
+  let event = List.find_map (function `Event e -> Some e | _ -> None) (snd calendar) |> Option.get in
+  let get_events = Icalendar.recur_events event in
+  let buf = Buffer.create 16 in
+  let rec collect () =
+    match get_events () with
+    | None -> ()
+    | Some e ->
+      Buffer.add_string buf
+        ( e.dtstart
+        |> snd
+        |> function
+           | `Datetime ts -> Icalendar.show_timestamp ts
+           | `Date d -> d |> Ptime.of_date |> Option.get |> Ptime.to_rfc3339
+        );
+        Buffer.add_char buf '\n';
+        collect ()
+  in
+  collect ();
+  let str = Buffer.contents buf in
+  (* No RRULE, but RDATE adds Mar 5 and Mar 10 in addition to dtstart Mar 1 *)
+  Alcotest.(check (string) "RDATE-only recurrence set includes dtstart + rdate dates"
+{|`Utc (2025-03-01 09:00:00 +00:00)
+`Utc (2025-03-05 09:00:00 +00:00)
+`Utc (2025-03-10 09:00:00 +00:00)
+|}
+              str)
+
 let tests = [
   "example 1", `Quick, ex_1 ;
   "example 2", `Quick, ex_2 ;
@@ -885,4 +971,6 @@ let tests = [
   "example 38: exdate", `Quick, exdate ;
   "example 39: recurrence-id", `Quick, ex_recurrence_id ;
   "example 40: multiple exdates", `Quick, multiple_exdates ;
+  "RDATE with RRULE", `Quick, rdate_with_rrule ;
+  "RDATE without RRULE", `Quick, rdate_without_rrule ;
 ]
