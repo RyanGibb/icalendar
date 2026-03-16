@@ -2194,6 +2194,11 @@ let dates_or_datetimes_to_ptimes = function
   | `Datetimes datetimes -> List.map datetime_to_ptime datetimes
   | `Dates dates -> List.map date_to_ptime dates
 
+let dates_or_datetimes_or_periods_to_ptimes = function
+  | `Datetimes datetimes -> List.map datetime_to_ptime datetimes
+  | `Dates dates -> List.map date_to_ptime dates
+  | `Periods periods -> List.map (fun (ts, _, _) -> datetime_to_ptime ts) periods
+
 let date_or_datetime_with_ptime d_or_dt ts =
   match d_or_dt with
   | `Date _ -> `Date (fst @@ Ptime.to_date_time ts)
@@ -2201,12 +2206,18 @@ let date_or_datetime_with_ptime d_or_dt ts =
   | `Datetime (`Local _) -> `Datetime (`Local ts)
   | `Datetime (`With_tzid (_, tzid)) -> `Datetime (`With_tzid (ts, tzid))
 
-(* TODO handle Rdate *)
 let recur_events ?(recurrence_ids = []) event =
-  match event.rrule with
-  | None -> (fun () -> None)
-  | Some (_, recur) ->
-    let dtstart = date_or_datetime_to_ptime (snd event.dtstart) in
+  let dtstart = date_or_datetime_to_ptime (snd event.dtstart) in
+  let rdate_timestamps =
+    let all = List.filter_map
+      (function `Rdate t -> Some (dates_or_datetimes_or_periods_to_ptimes (snd t)) | _ -> None)
+      event.props
+    in
+    List.sort Ptime.compare (List.flatten all)
+  in
+  match event.rrule, rdate_timestamps with
+  | None, [] -> (fun () -> None)
+  | _ ->
     let adjust_dtend ts = match event.dtend_or_duration with
       | None -> None
       | Some (`Duration d) -> Some (`Duration d)
@@ -2241,7 +2252,32 @@ let recur_events ?(recurrence_ids = []) event =
       | None -> false
       | Some timestamps -> List.exists (fun t -> Ptime.equal t ts) timestamps
     in
-    let newdate = recur_dates dtstart recur in
+    let base_gen = match event.rrule with
+      | Some (_, recur) -> recur_dates dtstart recur
+      | None ->
+        let emitted = ref false in
+        (fun () -> if !emitted then None else (emitted := true; Some dtstart))
+    in
+    let newdate =
+      match rdate_timestamps with
+      | [] -> base_gen
+      | _ ->
+        let rdates = ref rdate_timestamps in
+        let pending = ref None in
+        (fun () ->
+          let gen_val = match !pending with
+            | Some _ as v -> pending := None; v
+            | None -> base_gen ()
+          in
+          match gen_val, !rdates with
+          | None, [] -> None
+          | None, hd :: tl -> rdates := tl; Some hd
+          | Some ts, [] -> Some ts
+          | Some ts, hd :: tl ->
+            if Ptime.is_earlier ~than:hd ts then Some ts
+            else if Ptime.equal ts hd then (rdates := tl; Some ts)
+            else (rdates := tl; pending := Some ts; Some hd))
+    in
     (fun () ->
       let rec loop () =
         match newdate () with
