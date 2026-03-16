@@ -2234,7 +2234,19 @@ let decode_encode () =
     | Ok c -> c
     | Error e -> Alcotest.fail e
   in
-  Alcotest.(check string __LOC__ input (Icalendar.to_ics c))
+  let unfold s =
+    let buf = Buffer.create (String.length s) in
+    let len = String.length s in
+    let i = ref 0 in
+    while !i < len do
+      if !i + 2 < len && s.[!i] = '\r' && s.[!i + 1] = '\n'
+         && (s.[!i + 2] = ' ' || s.[!i + 2] = '\t') then
+        i := !i + 3
+      else (Buffer.add_char buf s.[!i]; i := !i + 1)
+    done;
+    Buffer.contents buf
+  in
+  Alcotest.(check string __LOC__ input (unfold (Icalendar.to_ics c)))
 
 let x_apple_put () =
   let input = {|BEGIN:VCALENDAR
