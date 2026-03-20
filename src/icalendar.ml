@@ -1305,7 +1305,19 @@ let utc_only = function
   | `Local _ -> fail "timestamp must be in UTC"
 
 let parse_datetime s =
-  try parse_string ~consume:Consume.All datetime s with Parse_error s -> Error s
+  match
+    try parse_string ~consume:Consume.All datetime s with Parse_error s -> Error s
+  with
+  | Ok _ as ok -> ok
+  | Error _ ->
+    match
+      try parse_string ~consume:Consume.All date s with Parse_error s -> Error s
+    with
+    | Ok (y, m, d) ->
+      (match Ptime.of_date_time ((y, m, d), ((0, 0, 0), 0)) with
+       | Some p -> Ok (`Utc p)
+       | None -> Error "invalid date")
+    | Error _ as e -> e
 
 let dur_value =
   let to_seconds p factor = p >>= ensure int_of_string >>| ( * ) factor in
