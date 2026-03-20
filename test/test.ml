@@ -3295,6 +3295,76 @@ let tz_normalisation_tests = [
   "timestamp doesn't exist (standard -> DST)", `Quick, ts_non_existing ;
 ]
 
+let ts =
+  let module M = struct
+    type t = Icalendar.timestamp
+    let pp fmt = function
+      | `Utc p -> Fmt.pf fmt "`Utc %a" (Ptime.pp_human ()) p
+      | `Local p -> Fmt.pf fmt "`Local %a" (Ptime.pp_human ()) p
+      | `With_tzid (p, (_, tzid)) -> Fmt.pf fmt "`With_tzid (%a, %s)" (Ptime.pp_human ()) p tzid
+    let equal a b = match a, b with
+      | `Utc a, `Utc b -> Ptime.equal a b
+      | `Local a, `Local b -> Ptime.equal a b
+      | `With_tzid (a, (_, atz)), `With_tzid (b, (_, btz)) -> Ptime.equal a b && String.equal atz btz
+      | _ -> false
+  end in (module M : Alcotest.TESTABLE with type t = M.t)
+
+let result_ts = Alcotest.(result ts string)
+
+let parse_datetime_utc () =
+  let result = Icalendar.parse_datetime "19970714T170000Z" in
+  Alcotest.check result_ts "parse UTC datetime"
+    (Ok (`Utc (to_ptime (1997, 07, 14) (17, 0, 0))))
+    result
+
+let parse_datetime_local () =
+  let result = Icalendar.parse_datetime "19970714T170000" in
+  Alcotest.check result_ts "parse local datetime"
+    (Ok (`Local (to_ptime (1997, 07, 14) (17, 0, 0))))
+    result
+
+let parse_datetime_bare_date () =
+  let result = Icalendar.parse_datetime "19971224" in
+  Alcotest.check result_ts "parse bare date as UTC midnight"
+    (Ok (`Utc (to_ptime (1997, 12, 24) (0, 0, 0))))
+    result
+
+let parse_datetime_tests = [
+  "parse UTC datetime", `Quick, parse_datetime_utc ;
+  "parse local datetime", `Quick, parse_datetime_local ;
+  "parse bare date", `Quick, parse_datetime_bare_date ;
+]
+
+let calendar_until_date = {|BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:until-date-test
+DTSTAMP:20250221T173943Z
+SUMMARY:date event
+DTSTART;VALUE=DATE:20250301
+DTEND;VALUE=DATE:20250302
+RRULE:FREQ=DAILY;UNTIL=20250305
+END:VEVENT
+END:VCALENDAR|}
+
+let until_bare_date () =
+  let calendar = Icalendar.parse calendar_until_date |> Result.get_ok in
+  let event = List.find_map (function `Event e -> Some e | _ -> None) (snd calendar) |> Option.get in
+  let get_events = Icalendar.recur_events event in
+  let rec collect acc =
+    match get_events () with
+    | None -> List.rev acc
+    | Some e -> collect (e :: acc)
+  in
+  let events = collect [] in
+  (* UNTIL=20250305 should include Mar 1-5 (5 days, inclusive) *)
+  Alcotest.(check int) "UNTIL bare date gives correct count" 5 (List.length events)
+
+let until_date_tests = [
+  "UNTIL with bare date in RRULE", `Quick, until_bare_date ;
+]
+
 let tests = [
   "Object tests", object_tests ;
   "Timezone tests", timezone_tests ;
@@ -3304,6 +3374,8 @@ let tests = [
   "Recurrence tests", Test_recur.tests ;
   "Serialization tests", Test_write.tests ;
   "Timezone normalization tests", tz_normalisation_tests ;
+  "parse_datetime tests", parse_datetime_tests ;
+  "UNTIL date tests", until_date_tests ;
 ]
 
 let () =
